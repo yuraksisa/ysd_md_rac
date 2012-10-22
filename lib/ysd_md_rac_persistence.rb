@@ -4,18 +4,7 @@ module Users
   # ResourceAccessControl for Persistence System
   #
   module ResourceAccessControlPersistence
-    include ResourceAccessControl
-    
-      #
-      # When the resource is included
-      #
-      def self.included(model)    
         
-        ResourceAccessControl.prepare_model(model) 
-        model.extend(AccessControlConditionsAppenderPersistence)   
-     
-     end    
-    
      #
      # Updates the resource access control information if not has been set
      #

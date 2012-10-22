@@ -22,21 +22,34 @@ module Users
   #
   #
   module ResourceAccessControl
-         
-      def self.prepare_model(model)
+      
+      #
+      #
+      #   
+      def self.included(model)
 
         model.property :permission_owner, String, :field => 'permission_owner', :length => 32
         model.property :permission_group, String, :field => 'permission_group', :length => 32
         model.property :permission_modifier_owner, Integer, :field => 'permission_modifier_owner', :default => 6
         model.property :permission_modifier_group, Integer, :field => 'permission_modifier_group', :default => 2
         model.property :permission_modifier_all, Integer, :field => 'permission_modifier_all', :default => 0
-         
+  
         model.class_eval do
           class << self 
              alias_method :original_all, :all
              alias_method :original_count, :count
           end
         end         
+ 
+        if Persistence::Model.descendants.include?(model)  
+          model.send :include, ResourceAccessControlPersistence
+          model.extend(AccessControlConditionsAppenderPersistence)   
+        else
+          if DataMapper::Model.descendants.include?(model)
+            model.send :include, ResourceAccessControlDataMapper
+            model.extend(AccessControlConditionsAppenderDataMapper)
+          end
+        end 
          
       end
   

@@ -1,5 +1,49 @@
+require 'ysd-md-profile' 
+require 'ysd-persistence'
+
 module Users
  
+  module AccessConditionsAppender
+      include Users::ConnectedUser # To access the connected user
+
+      #
+      # Create the query conditions to access the resource
+      #
+      #
+      # @return [Conditions::Comparison]
+      #
+      #  A Comparison which have to be matched to access the resource
+      #
+      #
+      def access_control_conditions
+      
+        conditions = []
+      
+        if connected_user
+          conditions << Conditions::JoinComparison.new('$and', 
+                               [Conditions::Comparison.new(:permission_owner, '$eq', connected_user.username),
+                                Conditions::Comparison.new(:permission_modifier_owner, '$in', [2,6])])
+       
+          if connected_user.usergroups.length > 0
+            conditions << Conditions::JoinComparison.new('$and',
+                                 [Conditions::Comparison.new(:permission_group, '$in', connected_user.usergroups.map {|item| item.group}),
+                                  Conditions::Comparison.new(:permission_modifier_group, '$in', [2,6])])    
+          end
+        
+        end
+        
+        conditions << Conditions::Comparison.new(:permission_modifier_all, '$in', [2,6])       
+
+        if conditions.length > 1
+          conditions = Conditions::JoinComparison.new('$or', conditions)
+        else        
+          conditions.first
+        end
+          
+      end
+
+  end
+
   #
   # It represents the resource access control to check if a profile can access a resource
   #
@@ -22,34 +66,49 @@ module Users
   #
   #
   module ResourceAccessControl
+      include Users::ConnectedUser
+      extend Users::AccessConditionsAppender
       
+      def self.updated_connected_user
+        
+        if @models
+        @models.each do |model|   
+          if Persistence::Model.descendants.include?(model)  
+            model.default_scope.update(access_control_conditions)
+          else
+            if DataMapper::Model.descendants.include?(model)
+              model.default_scope.update({:conditions => access_control_conditions.build_sql})
+            end
+          end 
+        end
+        end
+
+      end
+
       #
       #
       #   
       def self.included(model)
 
-        model.property :permission_owner, String, :field => 'permission_owner', :length => 32
-        model.property :permission_group, String, :field => 'permission_group', :length => 32
-        model.property :permission_modifier_owner, Integer, :field => 'permission_modifier_owner', :default => 6
-        model.property :permission_modifier_group, Integer, :field => 'permission_modifier_group', :default => 2
-        model.property :permission_modifier_all, Integer, :field => 'permission_modifier_all', :default => 0
-  
-        model.class_eval do
-          class << self 
-             alias_method :original_all, :all
-             alias_method :original_count, :count
+        if model.respond_to?(:property)
+          model.property :permission_owner, String, :field => 'permission_owner', :length => 20
+          model.property :permission_group, String, :field => 'permission_group', :length => 32
+          model.property :permission_modifier_owner, Integer, :field => 'permission_modifier_owner', :default => 6
+          model.property :permission_modifier_group, Integer, :field => 'permission_modifier_group', :default => 2
+          model.property :permission_modifier_all, Integer, :field => 'permission_modifier_all', :default => 0
+        end
+
+        if model.respond_to?(:before)
+          model.before :create do |data|
+            init_rac_data
           end
-        end         
- 
-        if Persistence::Model.descendants.include?(model)  
-          model.send :include, ResourceAccessControlPersistence
-          model.extend(AccessControlConditionsAppenderPersistence)   
-        else
-          if DataMapper::Model.descendants.include?(model)
-            model.send :include, ResourceAccessControlDataMapper
-            model.extend(AccessControlConditionsAppenderDataMapper)
-          end
-        end 
+        end
+
+        # Add the permissions conditions
+        if model.respond_to?(:default_scope)
+          @models ||= []
+          @models << model
+        end
          
       end
   
@@ -78,7 +137,7 @@ module Users
         can_access?(profile, [4,6])
       
       end
-              
+         
       private
       
       #
@@ -103,7 +162,7 @@ module Users
         
         if profile and not can_access_resource
            superuser_access = profile.is_superuser?
-           can_access_group = (options.include?(attribute_get(:permission_modifier_group)) and profile.usergroups.include?(attribute_get(:permission_group))) 
+           can_access_group = (options.include?(attribute_get(:permission_modifier_group)) and profile.usergroups.map{|item| item.group }.include?(attribute_get(:permission_group))) 
            can_access_owner = (options.include?(attribute_get(:permission_modifier_owner)) and profile.username == attribute_get(:permission_owner))
            
            can_access_resource = (superuser_access or can_access_group or can_access_owner)
@@ -112,8 +171,35 @@ module Users
         return can_access_resource
             
       end
-       
-  end # ResourceAccessControl
 
+      #
+      # Initialize the data on an creation operation 
+      #
+      def init_rac_data
+        
+        if connected_user and (self.permission_owner.nil? or self.permission_owner.empty?)
+          self.permission_owner = connected_user.username
+        end
+
+        if connected_user and connected_user.usergroups.length > 0 and (self.permission_group.nil? or self.permission_group.empty?)
+          self.permission_group = connected_user.usergroups.first.group 
+        end
+
+        if self.permission_modifier_owner.nil?   
+          self.permission_modifier_owner = 6 
+        end
+      
+        if self.permission_modifier_group.nil?
+          self.permission_modifier_group = 2 
+        end
+      
+        if self.permission_modifier_all.nil?
+          self.permission_modifier_all = 0
+        end 
+
+      end
+
+
+  end # ResourceAccessControl
   
 end #Users

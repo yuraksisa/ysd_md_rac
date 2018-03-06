@@ -95,7 +95,7 @@ module Users
           model.property :permission_group, String, :field => 'permission_group', :length => 32
           model.property :permission_modifier_owner, Integer, :field => 'permission_modifier_owner', :default => 6
           model.property :permission_modifier_group, Integer, :field => 'permission_modifier_group', :default => 2
-          model.property :permission_modifier_all, Integer, :field => 'permission_modifier_all', :default => 0
+          model.property :permission_modifier_all, Integer, :field => 'permission_modifier_all', :default => 2
         end
 
         if model.respond_to?(:before)
